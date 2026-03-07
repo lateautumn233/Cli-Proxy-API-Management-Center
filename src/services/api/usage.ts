@@ -22,6 +22,13 @@ export interface UsageImportResponse {
   [key: string]: unknown;
 }
 
+export interface UsageModelPricesPayload {
+  version?: number;
+  saved_at?: string;
+  prices?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export const usageApi = {
   /**
    * 获取使用统计原始数据
@@ -31,7 +38,8 @@ export const usageApi = {
   /**
    * 导出使用统计快照
    */
-  exportUsage: () => apiClient.get<UsageExportPayload>('/usage/export', { timeout: USAGE_TIMEOUT_MS }),
+  exportUsage: () =>
+    apiClient.get<UsageExportPayload>('/usage/export', { timeout: USAGE_TIMEOUT_MS }),
 
   /**
    * 导入使用统计快照
@@ -40,14 +48,32 @@ export const usageApi = {
     apiClient.post<UsageImportResponse>('/usage/import', payload, { timeout: USAGE_TIMEOUT_MS }),
 
   /**
+   * 获取服务端本地持久化的模型价格覆盖
+   */
+  getModelPrices: () =>
+    apiClient.get<UsageModelPricesPayload>('/usage/model-prices', { timeout: USAGE_TIMEOUT_MS }),
+
+  /**
+   * 保存服务端本地持久化的模型价格覆盖
+   */
+  saveModelPrices: (prices: Record<string, unknown>) =>
+    apiClient.put<UsageModelPricesPayload>(
+      '/usage/model-prices',
+      { prices },
+      { timeout: USAGE_TIMEOUT_MS }
+    ),
+
+  /**
    * 计算密钥成功/失败统计，必要时会先获取 usage 数据
    */
   async getKeyStats(usageData?: unknown): Promise<KeyStats> {
     let payload = usageData;
     if (!payload) {
-      const response = await apiClient.get<Record<string, unknown>>('/usage', { timeout: USAGE_TIMEOUT_MS });
+      const response = await apiClient.get<Record<string, unknown>>('/usage', {
+        timeout: USAGE_TIMEOUT_MS,
+      });
       payload = response?.usage ?? response;
     }
     return computeKeyStats(payload);
-  }
+  },
 };

@@ -66,7 +66,10 @@ export interface ApiStats {
   failureCount: number;
   totalTokens: number;
   totalCost: number;
-  models: Record<string, { requests: number; successCount: number; failureCount: number; tokens: number }>;
+  models: Record<
+    string,
+    { requests: number; successCount: number; failureCount: number; tokens: number }
+  >;
 }
 
 export type UsageTimeRange = '7h' | '24h' | '7d' | 'all';
@@ -77,11 +80,350 @@ const USAGE_ENDPOINT_METHOD_REGEX = /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s
 const USAGE_TIME_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
   '7h': 7 * 60 * 60 * 1000,
   '24h': 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000
+  '7d': 7 * 24 * 60 * 60 * 1000,
 };
+
+export const DEFAULT_MODEL_PRICE_SOURCE_URL =
+  'https://github.com/flanker/llmprice.cn/raw/refs/heads/master/README.md';
+export const DEFAULT_MODEL_PRICE_SOURCE_UPDATED_AT = '2026-03-07';
+
+interface DefaultModelPriceCatalogEntry extends ModelPrice {
+  model: string;
+  aliases: string[];
+}
+
+// Derived from llmprice.cn README (updated 2026-03-07).
+// The source table does not provide cached-token pricing, so cache defaults to prompt pricing.
+const DEFAULT_MODEL_PRICE_CATALOG: DefaultModelPriceCatalogEntry[] = [
+  { model: 'gpt-5.4', aliases: ['gpt-5.4'], prompt: 2.5, completion: 15, cache: 2.5 },
+  {
+    model: 'gpt-5-mini',
+    aliases: ['gpt-5-mini', 'GPT-5 mini'],
+    prompt: 0.25,
+    completion: 2,
+    cache: 0.25,
+  },
+  { model: 'o3', aliases: ['o3'], prompt: 2, completion: 8, cache: 2 },
+  { model: 'o4-mini', aliases: ['o4-mini', 'o4 mini'], prompt: 1.1, completion: 4.4, cache: 1.1 },
+  {
+    model: 'claude-opus-4-6',
+    aliases: ['claude-opus-4-6', 'Claude Opus 4.6'],
+    prompt: 5,
+    completion: 25,
+    cache: 5,
+  },
+  {
+    model: 'claude-sonnet-4-6',
+    aliases: ['claude-sonnet-4-6', 'Claude Sonnet 4.6'],
+    prompt: 3,
+    completion: 15,
+    cache: 3,
+  },
+  {
+    model: 'claude-haiku-4-5',
+    aliases: ['claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'Claude Haiku 4.5'],
+    prompt: 1,
+    completion: 5,
+    cache: 1,
+  },
+  {
+    model: 'gemini-3.1-pro-preview',
+    aliases: ['gemini-3.1-pro-preview', 'gemini-3.1-pro', 'Gemini 3.1 Pro'],
+    prompt: 2,
+    completion: 12,
+    cache: 2,
+  },
+  {
+    model: 'gemini-3-flash-preview',
+    aliases: ['gemini-3-flash-preview', 'gemini-3-flash', 'Gemini 3 Flash'],
+    prompt: 0.5,
+    completion: 3,
+    cache: 0.5,
+  },
+  {
+    model: 'gemini-2.5-pro',
+    aliases: ['gemini-2.5-pro', 'Gemini 2.5 Pro'],
+    prompt: 1.25,
+    completion: 10,
+    cache: 1.25,
+  },
+  {
+    model: 'gemini-2.5-flash',
+    aliases: ['gemini-2.5-flash', 'gemini-2.5-flash-001', 'Gemini 2.5 Flash'],
+    prompt: 0.3,
+    completion: 2.5,
+    cache: 0.3,
+  },
+  {
+    model: 'gemini-2.5-flash-lite',
+    aliases: ['gemini-2.5-flash-lite', 'Gemini 2.5 Flash-Lite', 'Gemini 2.5 Flash Lite'],
+    prompt: 0.1,
+    completion: 0.4,
+    cache: 0.1,
+  },
+  {
+    model: 'deepseek-chat',
+    aliases: ['deepseek-chat'],
+    prompt: 0.28,
+    completion: 0.42,
+    cache: 0.28,
+  },
+  {
+    model: 'deepseek-reasoner',
+    aliases: ['deepseek-reasoner'],
+    prompt: 0.28,
+    completion: 0.42,
+    cache: 0.28,
+  },
+  { model: 'qwen3.5-plus', aliases: ['qwen3.5-plus'], prompt: 0.8, completion: 4.8, cache: 0.8 },
+  { model: 'qwen3-max', aliases: ['qwen3-max'], prompt: 2.5, completion: 10, cache: 2.5 },
+  { model: 'qwen-plus', aliases: ['qwen-plus'], prompt: 0.8, completion: 2, cache: 0.8 },
+  {
+    model: 'doubao-seed-2.0-pro',
+    aliases: ['doubao-seed-2.0-pro', 'Doubao-Seed-2.0-Pro'],
+    prompt: 3.2,
+    completion: 16,
+    cache: 3.2,
+  },
+  {
+    model: 'doubao-seed-2.0-lite',
+    aliases: ['doubao-seed-2.0-lite', 'Doubao-Seed-2.0-Lite'],
+    prompt: 0.6,
+    completion: 3.6,
+    cache: 0.6,
+  },
+  {
+    model: 'kimi-k2.5',
+    aliases: ['kimi-k2.5', 'kimi-k2-5', 'kimi-k2.5-thinking'],
+    prompt: 4,
+    completion: 21,
+    cache: 4,
+  },
+  {
+    model: 'kimi-k2',
+    aliases: ['kimi-k2', 'kimi-k2-thinking', 'Kimi K2'],
+    prompt: 4,
+    completion: 16,
+    cache: 4,
+  },
+  {
+    model: 'baichuan-m3-plus',
+    aliases: ['baichuan-m3-plus', 'Baichuan-M3-Plus'],
+    prompt: 5,
+    completion: 9,
+    cache: 5,
+  },
+  {
+    model: 'baichuan4-air',
+    aliases: ['baichuan4-air', 'Baichuan4-Air'],
+    prompt: 0.98,
+    completion: 0.98,
+    cache: 0.98,
+  },
+  { model: 'glm-5', aliases: ['glm-5', 'GLM-5'], prompt: 4, completion: 18, cache: 4 },
+  {
+    model: 'glm-4-flash',
+    aliases: ['glm-4-flash', 'GLM-4-Flash'],
+    prompt: 0,
+    completion: 0,
+    cache: 0,
+  },
+  { model: 'yi-lightning', aliases: ['yi-lightning'], prompt: 1, completion: 1, cache: 1 },
+  { model: 'ernie-5.0', aliases: ['ernie-5.0', 'ERNIE-5.0'], prompt: 6, completion: 24, cache: 6 },
+  {
+    model: 'ernie-4.5-turbo',
+    aliases: ['ernie-4.5-turbo', 'ERNIE-4.5-Turbo'],
+    prompt: 0.8,
+    completion: 3.2,
+    cache: 0.8,
+  },
+  {
+    model: 'ernie-speed',
+    aliases: ['ernie-speed', 'ERNIE-Speed'],
+    prompt: 0,
+    completion: 0,
+    cache: 0,
+  },
+];
+
+const normalizeModelPriceLookupKey = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/^models\//, '')
+    .replace(/[\s_]+/g, '-');
+
+const DEFAULT_MODEL_PRICE_INDEX = DEFAULT_MODEL_PRICE_CATALOG.reduce<Record<string, ModelPrice>>(
+  (acc, entry) => {
+    const price = {
+      prompt: entry.prompt,
+      completion: entry.completion,
+      cache: entry.cache,
+    };
+    entry.aliases.forEach((alias) => {
+      const key = normalizeModelPriceLookupKey(alias);
+      if (!key) {
+        return;
+      }
+      acc[key] = price;
+    });
+    return acc;
+  },
+  {}
+);
+
+const DEFAULT_MODEL_PRICE_MODELS = DEFAULT_MODEL_PRICE_CATALOG.map((entry) => entry.model);
+const DEFAULT_MODEL_PRICE_NAME_INDEX = DEFAULT_MODEL_PRICE_CATALOG.reduce<Record<string, string>>(
+  (acc, entry) => {
+    const modelKey = normalizeModelPriceLookupKey(entry.model);
+    if (modelKey) {
+      acc[modelKey] = entry.model;
+    }
+    entry.aliases.forEach((alias) => {
+      const aliasKey = normalizeModelPriceLookupKey(alias);
+      if (aliasKey) {
+        acc[aliasKey] = entry.model;
+      }
+    });
+    return acc;
+  },
+  {}
+);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+export function normalizeModelPrices(value: unknown): Record<string, ModelPrice> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const normalized: Record<string, ModelPrice> = {};
+  Object.entries(value).forEach(([model, price]: [string, unknown]) => {
+    if (!model) return;
+    const priceRecord = isRecord(price) ? price : null;
+    const promptRaw = Number(priceRecord?.prompt);
+    const completionRaw = Number(priceRecord?.completion);
+    const cacheRaw = Number(priceRecord?.cache);
+
+    if (
+      !Number.isFinite(promptRaw) &&
+      !Number.isFinite(completionRaw) &&
+      !Number.isFinite(cacheRaw)
+    ) {
+      return;
+    }
+
+    const prompt = Number.isFinite(promptRaw) && promptRaw >= 0 ? promptRaw : 0;
+    const completion = Number.isFinite(completionRaw) && completionRaw >= 0 ? completionRaw : 0;
+    const cache =
+      Number.isFinite(cacheRaw) && cacheRaw >= 0
+        ? cacheRaw
+        : Number.isFinite(promptRaw) && promptRaw >= 0
+          ? promptRaw
+          : prompt;
+
+    normalized[model] = {
+      prompt,
+      completion,
+      cache,
+    };
+  });
+  return normalized;
+}
+
+export function getDefaultModelPrice(modelName: string): ModelPrice | null {
+  const normalizedKey = normalizeModelPriceLookupKey(modelName);
+  if (!normalizedKey) {
+    return null;
+  }
+  const price = DEFAULT_MODEL_PRICE_INDEX[normalizedKey];
+  return price ? { ...price } : null;
+}
+
+export function getDefaultModelPriceModels(): string[] {
+  return [...DEFAULT_MODEL_PRICE_MODELS];
+}
+
+export function getDisplayModelPriceName(modelName: string): string {
+  const normalizedKey = normalizeModelPriceLookupKey(modelName);
+  if (!normalizedKey) {
+    return modelName.trim();
+  }
+  return DEFAULT_MODEL_PRICE_NAME_INDEX[normalizedKey] ?? modelName.trim();
+}
+
+export function findModelPriceOverrideKey(
+  modelName: string,
+  modelPrices: Record<string, ModelPrice>
+): string | null {
+  const matchedEntries = findModelPriceOverrideKeys(modelName, modelPrices);
+  if (matchedEntries.length === 0) {
+    return null;
+  }
+  if (modelPrices[modelName]) {
+    return modelName;
+  }
+  return matchedEntries[0];
+}
+
+export function findModelPriceOverrideKeys(
+  modelName: string,
+  modelPrices: Record<string, ModelPrice>
+): string[] {
+  const normalizedKey = normalizeModelPriceLookupKey(modelName);
+  if (!normalizedKey) {
+    return [];
+  }
+
+  return Object.keys(modelPrices).filter(
+    (savedModel) => normalizeModelPriceLookupKey(savedModel) === normalizedKey
+  );
+}
+
+export function getConfigurableModelPriceModels(
+  modelNames: string[],
+  modelPrices: Record<string, ModelPrice>
+): string[] {
+  const displayNames = new Map<string, string>();
+  const addModel = (modelName: string) => {
+    const trimmed = modelName.trim();
+    if (!trimmed) {
+      return;
+    }
+    const normalizedKey = normalizeModelPriceLookupKey(trimmed);
+    if (!normalizedKey) {
+      return;
+    }
+    displayNames.set(normalizedKey, getDisplayModelPriceName(trimmed));
+  };
+
+  modelNames.forEach(addModel);
+  Object.keys(modelPrices).forEach(addModel);
+
+  return Array.from(displayNames.values());
+}
+
+export function resolveModelPrice(
+  modelName: string | undefined,
+  modelPrices: Record<string, ModelPrice>
+): ModelPrice | null {
+  if (!modelName) {
+    return null;
+  }
+  const overrideKey = findModelPriceOverrideKey(modelName, modelPrices);
+  if (overrideKey) {
+    return modelPrices[overrideKey];
+  }
+  return getDefaultModelPrice(modelName);
+}
+
+export function hasResolvedModelPrices(
+  modelNames: string[],
+  modelPrices: Record<string, ModelPrice>
+): boolean {
+  return modelNames.some((modelName) => resolveModelPrice(modelName, modelPrices) !== null);
+}
 
 const getApisRecord = (usageData: unknown): Record<string, unknown> | null => {
   const usageRecord = isRecord(usageData) ? usageData : null;
@@ -100,17 +442,21 @@ const createUsageSummary = (): UsageSummary => ({
   totalRequests: 0,
   successCount: 0,
   failureCount: 0,
-  totalTokens: 0
+  totalTokens: 0,
 });
 
 const toUsageSummaryFields = (summary: UsageSummary) => ({
   total_requests: summary.totalRequests,
   success_count: summary.successCount,
   failure_count: summary.failureCount,
-  total_tokens: summary.totalTokens
+  total_tokens: summary.totalTokens,
 });
 
-export function filterUsageByTimeRange<T>(usageData: T, range: UsageTimeRange, nowMs: number = Date.now()): T {
+export function filterUsageByTimeRange<T>(
+  usageData: T,
+  range: UsageTimeRange,
+  nowMs: number = Date.now()
+): T {
   if (range === 'all') {
     return usageData;
   }
@@ -180,7 +526,7 @@ export function filterUsageByTimeRange<T>(usageData: T, range: UsageTimeRange, n
       filteredModels[modelName] = {
         ...modelEntry,
         ...toUsageSummaryFields(modelSummary),
-        details: filteredDetails
+        details: filteredDetails,
       };
       hasModelData = true;
 
@@ -197,7 +543,7 @@ export function filterUsageByTimeRange<T>(usageData: T, range: UsageTimeRange, n
     filteredApis[apiName] = {
       ...apiEntry,
       ...toUsageSummaryFields(apiSummary),
-      models: filteredModels
+      models: filteredModels,
     };
 
     totalSummary.totalRequests += apiSummary.totalRequests;
@@ -209,7 +555,7 @@ export function filterUsageByTimeRange<T>(usageData: T, range: UsageTimeRange, n
   return {
     ...usageRecord,
     ...toUsageSummaryFields(totalSummary),
-    apis: filteredApis
+    apis: filteredApis,
   } as T;
 }
 
@@ -309,7 +655,8 @@ export function normalizeUsageSourceId(
   value: unknown,
   masker: (val: string) => string = maskApiKey
 ): string {
-  const raw = typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value);
+  const raw =
+    typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value);
   const trimmed = raw.trim();
   if (!trimmed) return '';
 
@@ -325,7 +672,10 @@ export function normalizeUsageSourceId(
   return `${USAGE_SOURCE_PREFIX_TEXT}${trimmed}`;
 }
 
-export function buildCandidateUsageSourceIds(input: { apiKey?: string; prefix?: string }): string[] {
+export function buildCandidateUsageSourceIds(input: {
+  apiKey?: string;
+  prefix?: string;
+}): string[] {
   const result: string[] = [];
 
   const prefix = input.prefix?.trim();
@@ -345,7 +695,10 @@ export function buildCandidateUsageSourceIds(input: { apiKey?: string; prefix?: 
 /**
  * 对使用数据中的敏感字段进行遮罩
  */
-export function maskUsageSensitiveValue(value: unknown, masker: (val: string) => string = maskApiKey): string {
+export function maskUsageSensitiveValue(
+  value: unknown,
+  masker: (val: string) => string = maskApiKey
+): string {
   if (value === null || value === undefined) {
     return '';
   }
@@ -357,12 +710,20 @@ export function maskUsageSensitiveValue(value: unknown, masker: (val: string) =>
   let masked = raw;
 
   const queryRegex = /([?&])(api[-_]?key|key|token|access_token|authorization)=([^&#\s]+)/gi;
-  masked = masked.replace(queryRegex, (_full, prefix, keyName, valuePart) => `${prefix}${keyName}=${masker(valuePart)}`);
+  masked = masked.replace(
+    queryRegex,
+    (_full, prefix, keyName, valuePart) => `${prefix}${keyName}=${masker(valuePart)}`
+  );
 
-  const headerRegex = /(api[-_]?key|key|token|access[-_]?token|authorization)\s*([:=])\s*([A-Za-z0-9._-]+)/gi;
-  masked = masked.replace(headerRegex, (_full, keyName, separator, valuePart) => `${keyName}${separator}${masker(valuePart)}`);
+  const headerRegex =
+    /(api[-_]?key|key|token|access[-_]?token|authorization)\s*([:=])\s*([A-Za-z0-9._-]+)/gi;
+  masked = masked.replace(
+    headerRegex,
+    (_full, keyName, separator, valuePart) => `${keyName}${separator}${masker(valuePart)}`
+  );
 
-  const keyLikeRegex = /(sk-[A-Za-z0-9]{6,}|AI[a-zA-Z0-9_-]{6,}|AIza[0-9A-Za-z-_]{8,}|hf_[A-Za-z0-9]{6,}|pk_[A-Za-z0-9]{6,}|rk_[A-Za-z0-9]{6,})/g;
+  const keyLikeRegex =
+    /(sk-[A-Za-z0-9]{6,}|AI[a-zA-Z0-9_-]{6,}|AIza[0-9A-Za-z-_]{8,}|hf_[A-Za-z0-9]{6,}|pk_[A-Za-z0-9]{6,}|rk_[A-Za-z0-9]{6,})/g;
   masked = masked.replace(keyLikeRegex, (match) => masker(match));
 
   if (masked === raw) {
@@ -436,7 +797,7 @@ export function formatUsd(value: number): string {
   const fixed = num.toFixed(2);
   const parts = Number(fixed).toLocaleString(undefined, {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    maximumFractionDigits: 2,
   });
   return `$${parts}`;
 }
@@ -652,7 +1013,9 @@ export function calculateRecentPerMinuteRates(
 
   details.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) {
       return;
     }
@@ -666,7 +1029,7 @@ export function calculateRecentPerMinuteRates(
     tpm: tokenCount / denominator,
     windowMinutes: effectiveWindow,
     requestCount,
-    tokenCount
+    tokenCount,
   };
 }
 
@@ -694,9 +1057,12 @@ export function getModelNamesFromUsage(usageData: unknown): string[] {
 /**
  * 计算成本数据
  */
-export function calculateCost(detail: UsageDetail, modelPrices: Record<string, ModelPrice>): number {
+export function calculateCost(
+  detail: UsageDetail,
+  modelPrices: Record<string, ModelPrice>
+): number {
   const modelName = detail.__modelName || '';
-  const price = modelPrices[modelName];
+  const price = resolveModelPrice(modelName, modelPrices);
   if (!price) {
     return 0;
   }
@@ -707,7 +1073,9 @@ export function calculateCost(detail: UsageDetail, modelPrices: Record<string, M
   const rawCachedTokensAlternate = Number(tokens.cache_tokens);
 
   const inputTokens = Number.isFinite(rawInputTokens) ? Math.max(rawInputTokens, 0) : 0;
-  const completionTokens = Number.isFinite(rawCompletionTokens) ? Math.max(rawCompletionTokens, 0) : 0;
+  const completionTokens = Number.isFinite(rawCompletionTokens)
+    ? Math.max(rawCompletionTokens, 0)
+    : 0;
   const cachedTokens = Math.max(
     Number.isFinite(rawCachedTokensPrimary) ? Math.max(rawCachedTokensPrimary, 0) : 0,
     Number.isFinite(rawCachedTokensAlternate) ? Math.max(rawCachedTokensAlternate, 0) : 0
@@ -716,7 +1084,8 @@ export function calculateCost(detail: UsageDetail, modelPrices: Record<string, M
 
   const promptCost = (promptTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.prompt) || 0);
   const cachedCost = (cachedTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.cache) || 0);
-  const completionCost = (completionTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.completion) || 0);
+  const completionCost =
+    (completionTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.completion) || 0);
   const total = promptCost + cachedCost + completionCost;
   return Number.isFinite(total) && total > 0 ? total : 0;
 }
@@ -724,9 +1093,12 @@ export function calculateCost(detail: UsageDetail, modelPrices: Record<string, M
 /**
  * 计算总成本
  */
-export function calculateTotalCost(usageData: unknown, modelPrices: Record<string, ModelPrice>): number {
+export function calculateTotalCost(
+  usageData: unknown,
+  modelPrices: Record<string, ModelPrice>
+): number {
   const details = collectUsageDetails(usageData);
-  if (!details.length || !Object.keys(modelPrices).length) {
+  if (!details.length) {
     return 0;
   }
   return details.reduce((sum, detail) => sum + calculateCost(detail, modelPrices), 0);
@@ -744,38 +1116,7 @@ export function loadModelPrices(): Record<string, ModelPrice> {
     if (!raw) {
       return {};
     }
-    const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed)) {
-      return {};
-    }
-    const normalized: Record<string, ModelPrice> = {};
-    Object.entries(parsed).forEach(([model, price]: [string, unknown]) => {
-      if (!model) return;
-      const priceRecord = isRecord(price) ? price : null;
-      const promptRaw = Number(priceRecord?.prompt);
-      const completionRaw = Number(priceRecord?.completion);
-      const cacheRaw = Number(priceRecord?.cache);
-
-      if (!Number.isFinite(promptRaw) && !Number.isFinite(completionRaw) && !Number.isFinite(cacheRaw)) {
-        return;
-      }
-
-      const prompt = Number.isFinite(promptRaw) && promptRaw >= 0 ? promptRaw : 0;
-      const completion = Number.isFinite(completionRaw) && completionRaw >= 0 ? completionRaw : 0;
-      const cache =
-        Number.isFinite(cacheRaw) && cacheRaw >= 0
-          ? cacheRaw
-          : Number.isFinite(promptRaw) && promptRaw >= 0
-            ? promptRaw
-            : prompt;
-
-      normalized[model] = {
-        prompt,
-        completion,
-        cache
-      };
-    });
-    return normalized;
+    return normalizeModelPrices(JSON.parse(raw));
   } catch {
     return {};
   }
@@ -789,7 +1130,7 @@ export function saveModelPrices(prices: Record<string, ModelPrice>): void {
     if (typeof localStorage === 'undefined') {
       return;
     }
-    localStorage.setItem(MODEL_PRICE_STORAGE_KEY, JSON.stringify(prices));
+    localStorage.setItem(MODEL_PRICE_STORAGE_KEY, JSON.stringify(normalizeModelPrices(prices)));
   } catch {
     console.warn('保存模型价格失败');
   }
@@ -798,14 +1139,20 @@ export function saveModelPrices(prices: Record<string, ModelPrice>): void {
 /**
  * 获取 API 统计数据
  */
-export function getApiStats(usageData: unknown, modelPrices: Record<string, ModelPrice>): ApiStats[] {
+export function getApiStats(
+  usageData: unknown,
+  modelPrices: Record<string, ModelPrice>
+): ApiStats[] {
   const apis = getApisRecord(usageData);
   if (!apis) return [];
   const result: ApiStats[] = [];
 
   Object.entries(apis).forEach(([endpoint, apiData]) => {
     if (!isRecord(apiData)) return;
-    const models: Record<string, { requests: number; successCount: number; failureCount: number; tokens: number }> = {};
+    const models: Record<
+      string,
+      { requests: number; successCount: number; failureCount: number; tokens: number }
+    > = {};
     let derivedSuccessCount = 0;
     let derivedFailureCount = 0;
     let totalCost = 0;
@@ -824,7 +1171,7 @@ export function getApiStats(usageData: unknown, modelPrices: Record<string, Mode
         failureCount += Number(modelData.failure_count) || 0;
       }
 
-      const price = modelPrices[modelName];
+      const price = resolveModelPrice(modelName, modelPrices);
       if (details.length > 0 && (!hasExplicitCounts || price)) {
         details.forEach((detail) => {
           const detailRecord = isRecord(detail) ? detail : null;
@@ -849,7 +1196,7 @@ export function getApiStats(usageData: unknown, modelPrices: Record<string, Mode
         requests: Number(modelData.total_requests) || 0,
         successCount,
         failureCount,
-        tokens: Number(modelData.total_tokens) || 0
+        tokens: Number(modelData.total_tokens) || 0,
       };
       derivedSuccessCount += successCount;
       derivedFailureCount += failureCount;
@@ -858,10 +1205,10 @@ export function getApiStats(usageData: unknown, modelPrices: Record<string, Mode
     const hasApiExplicitCounts =
       typeof apiData.success_count === 'number' || typeof apiData.failure_count === 'number';
     const successCount = hasApiExplicitCounts
-      ? (Number(apiData.success_count) || 0)
+      ? Number(apiData.success_count) || 0
       : derivedSuccessCount;
     const failureCount = hasApiExplicitCounts
-      ? (Number(apiData.failure_count) || 0)
+      ? Number(apiData.failure_count) || 0
       : derivedFailureCount;
 
     result.push({
@@ -871,7 +1218,7 @@ export function getApiStats(usageData: unknown, modelPrices: Record<string, Mode
       failureCount,
       totalTokens: Number(apiData.total_tokens) || 0,
       totalCost,
-      models
+      models,
     });
   });
 
@@ -881,7 +1228,10 @@ export function getApiStats(usageData: unknown, modelPrices: Record<string, Mode
 /**
  * 获取模型统计数据
  */
-export function getModelStats(usageData: unknown, modelPrices: Record<string, ModelPrice>): Array<{
+export function getModelStats(
+  usageData: unknown,
+  modelPrices: Record<string, ModelPrice>
+): Array<{
   model: string;
   requests: number;
   successCount: number;
@@ -892,7 +1242,10 @@ export function getModelStats(usageData: unknown, modelPrices: Record<string, Mo
   const apis = getApisRecord(usageData);
   if (!apis) return [];
 
-  const modelMap = new Map<string, { requests: number; successCount: number; failureCount: number; tokens: number; cost: number }>();
+  const modelMap = new Map<
+    string,
+    { requests: number; successCount: number; failureCount: number; tokens: number; cost: number }
+  >();
 
   Object.values(apis).forEach((apiData) => {
     if (!isRecord(apiData)) return;
@@ -902,13 +1255,19 @@ export function getModelStats(usageData: unknown, modelPrices: Record<string, Mo
 
     Object.entries(models).forEach(([modelName, modelData]) => {
       if (!isRecord(modelData)) return;
-      const existing = modelMap.get(modelName) || { requests: 0, successCount: 0, failureCount: 0, tokens: 0, cost: 0 };
+      const existing = modelMap.get(modelName) || {
+        requests: 0,
+        successCount: 0,
+        failureCount: 0,
+        tokens: 0,
+        cost: 0,
+      };
       existing.requests += Number(modelData.total_requests) || 0;
       existing.tokens += Number(modelData.total_tokens) || 0;
 
       const details = Array.isArray(modelData.details) ? modelData.details : [];
 
-      const price = modelPrices[modelName];
+      const price = resolveModelPrice(modelName, modelPrices);
 
       const hasExplicitCounts =
         typeof modelData.success_count === 'number' || typeof modelData.failure_count === 'number';
@@ -1012,7 +1371,9 @@ export function buildHourlySeriesByModel(
 
   details.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp <= 0) {
       return;
     }
@@ -1069,7 +1430,9 @@ export function buildDailySeriesByModel(
 
   details.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp <= 0) {
       return;
     }
@@ -1092,7 +1455,7 @@ export function buildDailySeriesByModel(
   const labels = Array.from(labelsSet).sort();
   const dataByModel = new Map<string, number[]>();
   valuesByModel.forEach((dayMap, modelName) => {
-    const series = labels.map(label => dayMap.get(label) || 0);
+    const series = labels.map((label) => dayMap.get(label) || 0);
     dataByModel.set(modelName, series);
   });
 
@@ -1103,7 +1466,10 @@ export interface ChartDataset {
   label: string;
   data: number[];
   borderColor: string;
-  backgroundColor: string | CanvasGradient | ((context: ScriptableContext<'line'>) => string | CanvasGradient);
+  backgroundColor:
+    | string
+    | CanvasGradient
+    | ((context: ScriptableContext<'line'>) => string | CanvasGradient);
   pointBackgroundColor?: string;
   pointBorderColor?: string;
   fill: boolean;
@@ -1152,7 +1518,11 @@ const withAlpha = (hex: string, alpha: number) => {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamped})`;
 };
 
-const buildAreaGradient = (context: ScriptableContext<'line'>, baseHex: string, fallback: string) => {
+const buildAreaGradient = (
+  context: ScriptableContext<'line'>,
+  baseHex: string,
+  fallback: string
+) => {
   const chart = context.chart;
   const ctx = chart.ctx;
   const area = chart.chartArea;
@@ -1178,16 +1548,17 @@ export function buildChartData(
   selectedModels: string[] = [],
   options: { hourWindowHours?: number } = {}
 ): ChartData {
-  const baseSeries = period === 'hour'
-    ? buildHourlySeriesByModel(usageData, metric, options.hourWindowHours)
-    : buildDailySeriesByModel(usageData, metric);
+  const baseSeries =
+    period === 'hour'
+      ? buildHourlySeriesByModel(usageData, metric, options.hourWindowHours)
+      : buildDailySeriesByModel(usageData, metric);
 
   const { labels, dataByModel } = baseSeries;
 
   // Build "All" series as sum of all models
   const getAllSeries = (): number[] => {
     const summed = new Array(labels.length).fill(0);
-    dataByModel.forEach(values => {
+    dataByModel.forEach((values) => {
       values.forEach((value, idx) => {
         summed[idx] = (summed[idx] || 0) + value;
       });
@@ -1200,7 +1571,9 @@ export function buildChartData(
 
   const datasets: ChartDataset[] = modelsToShow.map((model, index) => {
     const isAll = model === 'all';
-    const data = isAll ? getAllSeries() : (dataByModel.get(model) || new Array(labels.length).fill(0));
+    const data = isAll
+      ? getAllSeries()
+      : dataByModel.get(model) || new Array(labels.length).fill(0);
     const colorIndex = index % CHART_COLORS.length;
     const style = CHART_COLORS[colorIndex];
     const shouldFill = modelsToShow.length === 1 || (isAll && modelsToShow.length > 1);
@@ -1215,7 +1588,7 @@ export function buildChartData(
       pointBackgroundColor: style.borderColor,
       pointBorderColor: style.borderColor,
       fill: shouldFill,
-      tension: 0.35
+      tension: 0.35,
     };
   });
 
@@ -1283,8 +1656,15 @@ export function calculateStatusBarData(
   // Filter and bucket the usage details
   usageDetails.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0 || timestamp < windowStart || timestamp > now) {
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
+    if (
+      !Number.isFinite(timestamp) ||
+      timestamp <= 0 ||
+      timestamp < windowStart ||
+      timestamp > now
+    ) {
       return;
     }
 
@@ -1346,7 +1726,7 @@ export function calculateStatusBarData(
     blockDetails,
     successRate,
     totalSuccess,
-    totalFailure
+    totalFailure,
   };
 }
 
@@ -1364,9 +1744,7 @@ export interface ServiceHealthData {
   cols: number;
 }
 
-export function calculateServiceHealthData(
-  usageDetails: UsageDetail[]
-): ServiceHealthData {
+export function calculateServiceHealthData(usageDetails: UsageDetail[]): ServiceHealthData {
   const ROWS = 7;
   const COLS = 96;
   const BLOCK_COUNT = ROWS * COLS; // 672
@@ -1386,8 +1764,15 @@ export function calculateServiceHealthData(
 
   usageDetails.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0 || timestamp < windowStart || timestamp > now) {
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
+    if (
+      !Number.isFinite(timestamp) ||
+      timestamp <= 0 ||
+      timestamp < windowStart ||
+      timestamp > now
+    ) {
       return;
     }
 
@@ -1444,7 +1829,10 @@ export function calculateServiceHealthData(
   };
 }
 
-export function computeKeyStats(usageData: unknown, masker: (val: string) => string = maskApiKey): KeyStats {
+export function computeKeyStats(
+  usageData: unknown,
+  masker: (val: string) => string = maskApiKey
+): KeyStats {
   const apis = getApisRecord(usageData);
   if (!apis) {
     return { bySource: {}, byAuthIndex: {} };
@@ -1499,7 +1887,7 @@ export function computeKeyStats(usageData: unknown, masker: (val: string) => str
 
   return {
     bySource: sourceStats,
-    byAuthIndex: authIndexStats
+    byAuthIndex: authIndexStats,
   };
 }
 
@@ -1586,7 +1974,9 @@ export function buildHourlyTokenBreakdown(
 
   details.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp <= 0) return;
     const normalized = new Date(timestamp);
     normalized.setMinutes(0, 0, 0);
@@ -1601,9 +1991,10 @@ export function buildHourlyTokenBreakdown(
     const output = typeof tokens.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
     const cached = Math.max(
       typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-      typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0,
+      typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
     );
-    const reasoning = typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
+    const reasoning =
+      typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
 
     dataByCategory.input[bucketIndex] += input;
     dataByCategory.output[bucketIndex] += output;
@@ -1625,7 +2016,9 @@ export function buildDailyTokenBreakdown(usageData: unknown): TokenBreakdownSeri
 
   details.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp <= 0) return;
     const dayLabel = formatDayLabel(new Date(timestamp));
     if (!dayLabel) return;
@@ -1639,9 +2032,10 @@ export function buildDailyTokenBreakdown(usageData: unknown): TokenBreakdownSeri
     const output = typeof tokens.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
     const cached = Math.max(
       typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-      typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0,
+      typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
     );
-    const reasoning = typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
+    const reasoning =
+      typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
 
     dayMap[dayLabel].input += input;
     dayMap[dayLabel].output += output;
@@ -1699,7 +2093,9 @@ export function buildHourlyCostSeries(
 
   details.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp <= 0) return;
     const normalized = new Date(timestamp);
     normalized.setMinutes(0, 0, 0);
@@ -1709,9 +2105,9 @@ export function buildHourlyCostSeries(
     const bucketIndex = Math.floor((bucketStart - earliestTime) / hourMs);
     if (bucketIndex < 0 || bucketIndex >= labels.length) return;
 
-    const cost = calculateCost(detail, modelPrices);
-    if (cost > 0) {
-      data[bucketIndex] += cost;
+    const price = resolveModelPrice(detail.__modelName, modelPrices);
+    if (price) {
+      data[bucketIndex] += calculateCost(detail, modelPrices);
       hasData = true;
     }
   });
@@ -1732,14 +2128,16 @@ export function buildDailyCostSeries(
 
   details.forEach((detail) => {
     const timestamp =
-      typeof detail.__timestampMs === 'number' ? detail.__timestampMs : Date.parse(detail.timestamp);
+      typeof detail.__timestampMs === 'number'
+        ? detail.__timestampMs
+        : Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp <= 0) return;
     const dayLabel = formatDayLabel(new Date(timestamp));
     if (!dayLabel) return;
 
-    const cost = calculateCost(detail, modelPrices);
-    if (cost > 0) {
-      dayMap[dayLabel] = (dayMap[dayLabel] || 0) + cost;
+    const price = resolveModelPrice(detail.__modelName, modelPrices);
+    if (price) {
+      dayMap[dayLabel] = (dayMap[dayLabel] || 0) + calculateCost(detail, modelPrices);
       hasData = true;
     }
   });
