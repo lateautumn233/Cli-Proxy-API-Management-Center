@@ -3,7 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { USAGE_STATS_STALE_TIME_MS, useNotificationStore, useUsageStatsStore } from '@/stores';
 import { usageApi } from '@/services/api/usage';
 import { downloadBlob } from '@/utils/download';
-import { loadModelPrices, saveModelPrices, type ModelPrice } from '@/utils/usage';
+import {
+  loadModelPrices,
+  normalizeModelPrices,
+  saveModelPrices,
+  type ModelPrice,
+} from '@/utils/usage';
 
 export interface UsagePayload {
   total_requests?: number;
@@ -30,6 +35,36 @@ export interface UseUsageDataReturn {
   importing: boolean;
 }
 
+const areModelPricesEqual = (
+  left: Record<string, ModelPrice>,
+  right: Record<string, ModelPrice>
+): boolean => {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key, index) => {
+    if (key !== rightKeys[index]) {
+      return false;
+    }
+    const leftPrice = left[key];
+    const rightPrice = right[key];
+    return (
+      leftPrice?.prompt === rightPrice?.prompt &&
+      leftPrice?.completion === rightPrice?.completion &&
+      leftPrice?.cache === rightPrice?.cache
+    );
+  });
+};
+
+const choosePersistedModelPrices = (
+  remotePrices: Record<string, ModelPrice>,
+  localPrices: Record<string, ModelPrice>
+): Record<string, ModelPrice> =>
+  Object.keys(remotePrices).length > 0 ? remotePrices : localPrices;
+
 export function useUsageData(): UseUsageDataReturn {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
@@ -49,8 +84,42 @@ export function useUsageData(): UseUsageDataReturn {
   }, [loadUsageStats]);
 
   useEffect(() => {
+    let cancelled = false;
+
     void loadUsageStats({ staleTimeMs: USAGE_STATS_STALE_TIME_MS }).catch(() => {});
-    setModelPrices(loadModelPrices());
+
+    const loadPersistedModelPrices = async () => {
+      const localPrices = loadModelPrices();
+
+      try {
+        const response = await usageApi.getModelPrices();
+        const remotePrices = normalizeModelPrices(response?.prices);
+        const mergedPrices = choosePersistedModelPrices(remotePrices, localPrices);
+
+        if (!cancelled) {
+          setModelPrices(mergedPrices);
+          saveModelPrices(mergedPrices);
+        }
+
+        if (!areModelPricesEqual(remotePrices, mergedPrices)) {
+          try {
+            await usageApi.saveModelPrices(mergedPrices);
+          } catch {
+            // Keep browser-local data as a compatibility fallback when server sync is unavailable.
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setModelPrices(localPrices);
+        }
+      }
+    };
+
+    void loadPersistedModelPrices();
+
+    return () => {
+      cancelled = true;
+    };
   }, [loadUsageStats]);
 
   const handleExport = async () => {
@@ -65,7 +134,7 @@ export function useUsageData(): UseUsageDataReturn {
       const filename = `usage-export-${safeTimestamp.replace(/[:.]/g, '-')}.json`;
       downloadBlob({
         filename,
-        blob: new Blob([JSON.stringify(data ?? {}, null, 2)], { type: 'application/json' })
+        blob: new Blob([JSON.stringify(data ?? {}, null, 2)], { type: 'application/json' }),
       });
       showNotification(t('usage_stats.export_success'), 'success');
     } catch (err: unknown) {
@@ -105,7 +174,7 @@ export function useUsageData(): UseUsageDataReturn {
           added: result?.added ?? 0,
           skipped: result?.skipped ?? 0,
           total: result?.total_requests ?? 0,
-          failed: result?.failed_requests ?? 0
+          failed: result?.failed_requests ?? 0,
         }),
         'success'
       );
@@ -129,10 +198,21 @@ export function useUsageData(): UseUsageDataReturn {
     }
   };
 
-  const handleSetModelPrices = useCallback((prices: Record<string, ModelPrice>) => {
-    setModelPrices(prices);
-    saveModelPrices(prices);
-  }, []);
+  const handleSetModelPrices = useCallback(
+    (prices: Record<string, ModelPrice>) => {
+      const normalizedPrices = normalizeModelPrices(prices);
+      setModelPrices(normalizedPrices);
+      saveModelPrices(normalizedPrices);
+      void usageApi.saveModelPrices(normalizedPrices).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : '';
+        showNotification(
+          `${t('notification.update_failed')}${message ? `: ${message}` : ''}`,
+          'error'
+        );
+      });
+    },
+    [showNotification, t]
+  );
 
   const usage = usageSnapshot as UsagePayload | null;
   const error = storeError || '';
@@ -151,6 +231,6 @@ export function useUsageData(): UseUsageDataReturn {
     handleImportChange,
     importInputRef,
     exporting,
-    importing
+    importing,
   };
 }

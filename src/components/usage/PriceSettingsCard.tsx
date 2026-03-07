@@ -5,7 +5,15 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
-import type { ModelPrice } from '@/utils/usage';
+import {
+  findModelPriceOverrideKey,
+  findModelPriceOverrideKeys,
+  getConfigurableModelPriceModels,
+  getDefaultModelPrice,
+  getDisplayModelPriceName,
+  resolveModelPrice,
+  type ModelPrice,
+} from '@/utils/usage';
 import styles from '@/pages/UsagePage.module.scss';
 
 export interface PriceSettingsCardProps {
@@ -17,9 +25,13 @@ export interface PriceSettingsCardProps {
 export function PriceSettingsCard({
   modelNames,
   modelPrices,
-  onPricesChange
+  onPricesChange,
 }: PriceSettingsCardProps) {
   const { t } = useTranslation();
+  const usageModelNameSet = useMemo(
+    () => new Set(modelNames.map((name) => getDisplayModelPriceName(name))),
+    [modelNames]
+  );
 
   // Add form state
   const [selectedModel, setSelectedModel] = useState('');
@@ -33,12 +45,21 @@ export function PriceSettingsCard({
   const [editCompletion, setEditCompletion] = useState('');
   const [editCache, setEditCache] = useState('');
 
+  const buildNextPrices = (model: string, price: ModelPrice) => {
+    const nextPrices = { ...modelPrices };
+    findModelPriceOverrideKeys(model, modelPrices).forEach((matchedKey) => {
+      delete nextPrices[matchedKey];
+    });
+    nextPrices[model] = price;
+    return nextPrices;
+  };
+
   const handleSavePrice = () => {
     if (!selectedModel) return;
     const prompt = parseFloat(promptPrice) || 0;
     const completion = parseFloat(completionPrice) || 0;
     const cache = cachePrice.trim() === '' ? prompt : parseFloat(cachePrice) || 0;
-    const newPrices = { ...modelPrices, [selectedModel]: { prompt, completion, cache } };
+    const newPrices = buildNextPrices(selectedModel, { prompt, completion, cache });
     onPricesChange(newPrices);
     setSelectedModel('');
     setPromptPrice('');
@@ -47,13 +68,19 @@ export function PriceSettingsCard({
   };
 
   const handleDeletePrice = (model: string) => {
+    const overrideKeys = findModelPriceOverrideKeys(model, modelPrices);
+    if (overrideKeys.length === 0) {
+      return;
+    }
     const newPrices = { ...modelPrices };
-    delete newPrices[model];
+    overrideKeys.forEach((overrideKey) => {
+      delete newPrices[overrideKey];
+    });
     onPricesChange(newPrices);
   };
 
   const handleOpenEdit = (model: string) => {
-    const price = modelPrices[model];
+    const price = resolveModelPrice(model, modelPrices);
     setEditModel(model);
     setEditPrompt(price?.prompt?.toString() || '');
     setEditCompletion(price?.completion?.toString() || '');
@@ -65,14 +92,14 @@ export function PriceSettingsCard({
     const prompt = parseFloat(editPrompt) || 0;
     const completion = parseFloat(editCompletion) || 0;
     const cache = editCache.trim() === '' ? prompt : parseFloat(editCache) || 0;
-    const newPrices = { ...modelPrices, [editModel]: { prompt, completion, cache } };
+    const newPrices = buildNextPrices(editModel, { prompt, completion, cache });
     onPricesChange(newPrices);
     setEditModel(null);
   };
 
   const handleModelSelect = (value: string) => {
     setSelectedModel(value);
-    const price = modelPrices[value];
+    const price = resolveModelPrice(value, modelPrices);
     if (price) {
       setPromptPrice(price.prompt.toString());
       setCompletionPrice(price.completion.toString());
@@ -84,12 +111,61 @@ export function PriceSettingsCard({
     }
   };
 
+  const configurableModels = useMemo(() => {
+    const items = getConfigurableModelPriceModels(modelNames, modelPrices);
+    return items.sort((left, right) => {
+      const leftHasOverride = findModelPriceOverrideKey(left, modelPrices) !== null;
+      const rightHasOverride = findModelPriceOverrideKey(right, modelPrices) !== null;
+      if (leftHasOverride !== rightHasOverride) {
+        return leftHasOverride ? -1 : 1;
+      }
+
+      const leftInUsage = usageModelNameSet.has(left);
+      const rightInUsage = usageModelNameSet.has(right);
+      if (leftInUsage !== rightInUsage) {
+        return leftInUsage ? -1 : 1;
+      }
+
+      return left.localeCompare(right);
+    });
+  }, [modelNames, modelPrices, usageModelNameSet]);
+
+  const effectivePriceEntries = useMemo(
+    () =>
+      configurableModels
+        .map((model) => {
+          const price = resolveModelPrice(model, modelPrices);
+          if (!price) {
+            return null;
+          }
+          const hasOverride = findModelPriceOverrideKey(model, modelPrices) !== null;
+          const hasDefault = getDefaultModelPrice(model) !== null;
+          return {
+            model,
+            price,
+            hasOverride,
+            hasDefault,
+          };
+        })
+        .filter(
+          (
+            entry
+          ): entry is {
+            model: string;
+            price: ModelPrice;
+            hasOverride: boolean;
+            hasDefault: boolean;
+          } => entry !== null
+        ),
+    [configurableModels, modelPrices]
+  );
+
   const options = useMemo(
     () => [
       { value: '', label: t('usage_stats.model_price_select_placeholder') },
-      ...modelNames.map((name) => ({ value: name, label: name }))
+      ...configurableModels.map((name) => ({ value: name, label: name })),
     ],
-    [modelNames, t]
+    [configurableModels, t]
   );
 
   return (
@@ -141,17 +217,29 @@ export function PriceSettingsCard({
               {t('common.save')}
             </Button>
           </div>
+          <div className={styles.hint}>{t('usage_stats.model_price_default_hint')}</div>
         </div>
 
         {/* Saved Prices List */}
         <div className={styles.pricesList}>
-          <h4 className={styles.pricesTitle}>{t('usage_stats.saved_prices')}</h4>
-          {Object.keys(modelPrices).length > 0 ? (
+          <h4 className={styles.pricesTitle}>{t('usage_stats.model_price_effective_list')}</h4>
+          {effectivePriceEntries.length > 0 ? (
             <div className={styles.pricesGrid}>
-              {Object.entries(modelPrices).map(([model, price]) => (
+              {effectivePriceEntries.map(({ model, price, hasOverride, hasDefault }) => (
                 <div key={model} className={styles.priceItem}>
                   <div className={styles.priceInfo}>
-                    <span className={styles.priceModel}>{model}</span>
+                    <div className={styles.priceHeader}>
+                      <span className={styles.priceModel}>{model}</span>
+                      <span
+                        className={`${styles.priceTag} ${
+                          hasOverride ? styles.priceTagCustom : styles.priceTagDefault
+                        }`}
+                      >
+                        {hasOverride
+                          ? t('usage_stats.model_price_source_override')
+                          : t('usage_stats.model_price_source_default')}
+                      </span>
+                    </div>
                     <div className={styles.priceMeta}>
                       <span>
                         {t('usage_stats.model_price_prompt')}: ${price.prompt.toFixed(4)}/1M
@@ -168,9 +256,17 @@ export function PriceSettingsCard({
                     <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(model)}>
                       {t('common.edit')}
                     </Button>
-                    <Button variant="danger" size="sm" onClick={() => handleDeletePrice(model)}>
-                      {t('common.delete')}
-                    </Button>
+                    {hasOverride && (
+                      <Button
+                        variant={hasDefault ? 'secondary' : 'danger'}
+                        size="sm"
+                        onClick={() => handleDeletePrice(model)}
+                      >
+                        {hasDefault
+                          ? t('usage_stats.model_price_reset_to_default')
+                          : t('common.delete')}
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
