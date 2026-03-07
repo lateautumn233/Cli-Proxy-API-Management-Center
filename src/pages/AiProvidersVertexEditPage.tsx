@@ -176,7 +176,10 @@ export function AiProvidersVertexEditPage() {
 
   const { allowNextNavigation } = useUnsavedChangesGuard({
     enabled: canGuard,
-    shouldBlock: ({ currentLocation, nextLocation }) =>
+    shouldBlock: ({
+      currentLocation,
+      nextLocation,
+    }: Parameters<import('react-router-dom').BlockerFunction>[0]) =>
       isDirty && currentLocation.pathname !== nextLocation.pathname,
     dialog: {
       title: t('common.unsaved_changes_title'),

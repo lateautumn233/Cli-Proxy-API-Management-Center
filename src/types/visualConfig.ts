@@ -67,6 +67,8 @@ export type VisualConfigValues = {
   loggingToFile: boolean;
   logsMaxTotalSizeMb: string;
   usageStatisticsEnabled: boolean;
+  usageStatisticsPersistence: boolean;
+  usageStatisticsSaveInterval: string;
   proxyUrl: string;
   forceModelPrefix: boolean;
   requestRetry: string;
@@ -103,6 +105,8 @@ export const DEFAULT_VISUAL_VALUES: VisualConfigValues = {
   loggingToFile: false,
   logsMaxTotalSizeMb: '',
   usageStatisticsEnabled: false,
+  usageStatisticsPersistence: false,
+  usageStatisticsSaveInterval: '',
   proxyUrl: '',
   forceModelPrefix: false,
   requestRetry: '',

@@ -500,6 +500,8 @@ export function useVisualConfig() {
         loggingToFile: Boolean(parsed['logging-to-file']),
         logsMaxTotalSizeMb: String(parsed['logs-max-total-size-mb'] ?? ''),
         usageStatisticsEnabled: Boolean(parsed['usage-statistics-enabled']),
+        usageStatisticsPersistence: Boolean(parsed['usage-statistics-persistence']),
+        usageStatisticsSaveInterval: String(parsed['usage-statistics-save-interval'] ?? ''),
 
         proxyUrl: typeof parsed['proxy-url'] === 'string' ? parsed['proxy-url'] : '',
         forceModelPrefix: Boolean(parsed['force-model-prefix']),
@@ -632,6 +634,8 @@ export function useVisualConfig() {
         setBooleanInDoc(doc, ['logging-to-file'], values.loggingToFile);
         setIntFromStringInDoc(doc, ['logs-max-total-size-mb'], values.logsMaxTotalSizeMb);
         setBooleanInDoc(doc, ['usage-statistics-enabled'], values.usageStatisticsEnabled);
+        setBooleanInDoc(doc, ['usage-statistics-persistence'], values.usageStatisticsPersistence);
+        setIntFromStringInDoc(doc, ['usage-statistics-save-interval'], values.usageStatisticsSaveInterval);
 
         setStringInDoc(doc, ['proxy-url'], values.proxyUrl);
         setBooleanInDoc(doc, ['force-model-prefix'], values.forceModelPrefix);
