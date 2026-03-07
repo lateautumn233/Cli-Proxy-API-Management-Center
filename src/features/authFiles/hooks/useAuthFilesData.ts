@@ -156,32 +156,33 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
       }
 
       setUploading(true);
-      let successCount = 0;
-      const failed: { name: string; message: string }[] = [];
+      try {
+        const result =
+          validFiles.length === 1
+            ? await authFilesApi.upload(validFiles[0])
+            : await authFilesApi.uploadBatch(validFiles);
 
-      for (const file of validFiles) {
-        try {
-          await authFilesApi.upload(file);
-          successCount++;
-        } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-          failed.push({ name: file.name, message: errorMessage });
+        const failed = Array.isArray(result.failed) ? result.failed : [];
+        const successCount = Array.isArray(result.uploaded)
+          ? result.uploaded.length
+          : Math.max(0, validFiles.length - failed.length);
+
+        if (successCount > 0) {
+          const suffix = validFiles.length > 1 ? ` (${successCount}/${validFiles.length})` : '';
+          showNotification(
+            `${t('auth_files.upload_success')}${suffix}`,
+            failed.length ? 'warning' : 'success'
+          );
+          await Promise.all([loadFiles(), refreshKeyStats()]);
         }
-      }
 
-      if (successCount > 0) {
-        const suffix = validFiles.length > 1 ? ` (${successCount}/${validFiles.length})` : '';
-        showNotification(
-          `${t('auth_files.upload_success')}${suffix}`,
-          failed.length ? 'warning' : 'success'
-        );
-        await loadFiles();
-        await refreshKeyStats();
-      }
-
-      if (failed.length > 0) {
-        const details = failed.map((item) => `${item.name}: ${item.message}`).join('; ');
-        showNotification(`${t('notification.upload_failed')}: ${details}`, 'error');
+        if (failed.length > 0) {
+          const details = failed.map((item) => `${item.name}: ${item.error}`).join('; ');
+          showNotification(`${t('notification.upload_failed')}: ${details}`, 'error');
+        }
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        showNotification(`${t('notification.upload_failed')}: ${errorMessage}`, 'error');
       }
 
       setUploading(false);
