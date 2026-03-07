@@ -1,7 +1,6 @@
 import { ReactNode, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, type Location } from 'react-router-dom';
 import { animate } from 'motion/mini';
-import type { AnimationPlaybackControlsWithThen } from 'motion-dom';
 import { PageTransitionLayerContext, type LayerStatus } from './PageTransitionLayer';
 import './PageTransition.scss';
 
@@ -226,7 +225,7 @@ export function PageTransition({
     const enterFromY = isForward ? VERTICAL_TRAVEL_DISTANCE : -VERTICAL_TRAVEL_DISTANCE;
     const exitToY = isForward ? -VERTICAL_TRAVEL_DISTANCE : VERTICAL_TRAVEL_DISTANCE;
     const exitBaseY = enterScrollOffset - exitScrollOffset;
-    const activeAnimations: AnimationPlaybackControlsWithThen[] = [];
+    const activeAnimations: Array<ReturnType<typeof animate>> = [];
     let cancelled = false;
     let completed = false;
     const completeTransition = () => {

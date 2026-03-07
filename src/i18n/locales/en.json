@@ -1141,6 +1141,10 @@
           "logging_to_file_desc": "Save logs to files",
           "usage_statistics": "Usage Statistics",
           "usage_statistics_desc": "Collect usage statistics",
+          "usage_persistence": "Usage Statistics Persistence",
+          "usage_persistence_desc": "Periodically save usage statistics to logs/usage-statistics.json",
+          "usage_save_interval": "Save Interval (seconds)",
+          "usage_save_interval_hint": "How often usage statistics are saved to disk. Min 10, default 300",
           "logs_max_size": "Log File Size Limit (MB)"
         },
         "network": {

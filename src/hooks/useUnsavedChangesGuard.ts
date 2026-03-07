@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { BlockerFunction } from 'react-router';
-import { useBlocker, useLocation } from 'react-router';
+import type { BlockerFunction } from 'react-router-dom';
+import { useBlocker, useLocation } from 'react-router-dom';
 import { useNotificationStore } from '@/stores';
 
 type ConfirmationVariant = 'danger' | 'primary' | 'secondary';
@@ -35,7 +35,7 @@ export function useUnsavedChangesGuard(options: UseUnsavedChangesGuardOptions) {
   }, []);
 
   const shouldBlockFunction = useCallback<BlockerFunction>(
-    (args) => {
+    (args: Parameters<BlockerFunction>[0]) => {
       if (!enabled) return false;
       const now = Date.now();
 

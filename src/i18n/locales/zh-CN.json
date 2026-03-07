@@ -1141,6 +1141,10 @@
           "logging_to_file_desc": "将日志保存到文件",
           "usage_statistics": "使用统计",
           "usage_statistics_desc": "收集使用统计信息",
+          "usage_persistence": "使用统计持久化",
+          "usage_persistence_desc": "定期将使用统计保存到 logs/usage-statistics.json",
+          "usage_save_interval": "保存间隔（秒）",
+          "usage_save_interval_hint": "统计数据保存到磁盘的间隔，最小 10，默认 300",
           "logs_max_size": "日志文件大小限制 (MB)"
         },
         "network": {

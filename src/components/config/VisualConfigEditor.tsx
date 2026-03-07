@@ -863,6 +863,13 @@ export function VisualConfigEditor({ values, disabled = false, onChange }: Visua
               disabled={disabled}
               onChange={(usageStatisticsEnabled) => onChange({ usageStatisticsEnabled })}
             />
+            <ToggleRow
+              title={t('config_management.visual.sections.system.usage_persistence')}
+              description={t('config_management.visual.sections.system.usage_persistence_desc')}
+              checked={values.usageStatisticsPersistence}
+              disabled={disabled}
+              onChange={(usageStatisticsPersistence) => onChange({ usageStatisticsPersistence })}
+            />
           </SectionGrid>
 
           <SectionGrid>
@@ -873,6 +880,15 @@ export function VisualConfigEditor({ values, disabled = false, onChange }: Visua
               value={values.logsMaxTotalSizeMb}
               onChange={(e) => onChange({ logsMaxTotalSizeMb: e.target.value })}
               disabled={disabled}
+            />
+            <Input
+              label={t('config_management.visual.sections.system.usage_save_interval')}
+              type="number"
+              placeholder="300"
+              value={values.usageStatisticsSaveInterval}
+              onChange={(e) => onChange({ usageStatisticsSaveInterval: e.target.value })}
+              disabled={disabled}
+              hint={t('config_management.visual.sections.system.usage_save_interval_hint')}
             />
           </SectionGrid>
         </div>

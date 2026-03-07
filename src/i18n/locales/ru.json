@@ -1144,6 +1144,10 @@
           "logging_to_file_desc": "Сохранять журналы в файлы",
           "usage_statistics": "Статистика использования",
           "usage_statistics_desc": "Собирать статистику использования",
+          "usage_persistence": "Сохранение статистики",
+          "usage_persistence_desc": "Периодически сохранять статистику в logs/usage-statistics.json",
+          "usage_save_interval": "Интервал сохранения (секунды)",
+          "usage_save_interval_hint": "Как часто статистика сохраняется на диск. Мин. 10, по умолчанию 300",
           "logs_max_size": "Максимальный размер файла журнала (МБ)",
           "usage_retention_days": "Хранить статистику (дней)",
           "usage_retention_hint": "0 означает без ограничений (без очистки)"

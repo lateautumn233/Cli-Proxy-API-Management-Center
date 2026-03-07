@@ -276,7 +276,9 @@ export function AiProvidersClaudeEditLayout() {
 
   const { allowNextNavigation } = useUnsavedChangesGuard({
     enabled: canGuard,
-    shouldBlock: ({ nextLocation }) => {
+    shouldBlock: ({
+      nextLocation,
+    }: Parameters<import('react-router-dom').BlockerFunction>[0]) => {
       const nextPath = nextLocation.pathname;
       const isWithinRoot =
         nextPath === editorRootPath || nextPath.startsWith(`${editorRootPath}/`);
